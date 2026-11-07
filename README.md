@@ -2,7 +2,7 @@
 
 <img src="docs/icon-preview.png" width="72" alt="CX Audio Output 透明底图标">
 
-**把手机、平板或另一台电脑变成 Windows 的无线扬声器。原生 WinUI 3 控制台，局域网内浏览器即插即用。**
+**把手机、平板或另一台电脑变成 Windows 的无线扬声器。WinUI 3 Webview2 控制台，局域网内浏览器即开即用。**
 
 **Publisher: MasterTea**  
 **GitHub: [Master-Tea/CX-Audio-Output](https://github.com/Master-Tea/CX-Audio-Output)**  
@@ -25,14 +25,13 @@ Release 提供 Windows x64 ZIP、已签名 MSIX、安装脚本和 SHA256 校验�
 
 1.2 更新：
 
-- **全新透明底图标**：猫咪爪子与传声筒图标，真正透明背景，同步用于 exe、窗口、任务栏和网页 favicon。
-- **发布者改为 MasterTea**：exe 文件属性中的 Company / Copyright 已更新。
+- **全新透明底图标**：茶爪传声筒图标，透明背景，同步用于 exe、窗口、任务栏和网页 favicon。
 - **稳定性增强**：音频捕获线程使用 MMCSS + AboveNormal 优先级；兼容模式使用 4096 帧缓冲、额外安全缓冲、自适应目标、积分式时钟校正和欠载淡出；AudioWorklet 也有自适应缓冲与淡出，减少杂音、爆音和卡顿。
 - **欠载可见**：WinUI 接收设备卡片会显示“稳定”或“欠载 N 次”，方便判断是否需要切换延迟配置。
 
 此前版本已经包含：
 
-- **WinUI 3 原生控制台**：不再依赖浏览器管理服务。
+- **WinUI 3 控制台**：不再依赖浏览器管理服务。
 - **网卡选择**：可只选一块，也可多选；只允许选中的网卡接受局域网连接。
 - **实时硬件状态**：网卡插拔、状态、IP、速率自动刷新；音频设备状态实时同步。
 - **AudioWorklet 兼容模式**：修复“所有设备都提示不支持 AudioWorklet”的问题。
@@ -69,7 +68,7 @@ Release 提供 Windows x64 ZIP、已签名 MSIX、安装脚本和 SHA256 校验�
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/Master-Tea/CX-Audio-Output/releases/latest) 下载并解压 `CXAudioOutput-win-x64.zip`。
+1. 从 [发布](https://github.com/Master-Tea/CX-Audio-Output/releases/latest) 下载并解压 `CXAudioOutput-win-x64.zip`。
 2. 双击 `CXAudioOutput.exe`（或 `Start CX Audio Output.cmd`）。
 3. 原生控制台会自动启动服务（默认端口 `5240`）。
 4. 在“网络接口”中勾选一块或多块要使用的网卡。
