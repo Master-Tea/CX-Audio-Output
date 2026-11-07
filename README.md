@@ -86,8 +86,8 @@ Release 提供 Windows x64 ZIP、已签名 MSIX、安装脚本和 SHA256 校验�
 
 - `CXAudioOutput_1.2.0.0_x64.msix`
 - `MasterTea-CXAudioOutput.cer`
-- `Install MSIX.ps1`
-- `MSIX-安装说明.txt`
+- `Install-MSIX.ps1`
+- `MSIX-INSTALL.txt`
 
 安装包信息：
 
@@ -107,7 +107,7 @@ certutil -addstore -f Root .\MasterTea-CXAudioOutput.cer
 Add-AppxPackage .\CXAudioOutput_1.2.0.0_x64.msix
 ```
 
-也可以右键 `Install MSIX.ps1`，选择“使用 PowerShell 运行”（需要管理员）。  
+也可以右键 `Install-MSIX.ps1`，选择“使用 PowerShell 运行”（需要管理员）。  
 如果报 `0x800B0109`，说明证书还没有导入 **本地计算机** 的受信任根，请用管理员权限重试。
 
 > 自签名适合本机/内部测试。若要公开分发，建议换公共 CA 或 Azure Trusted Signing 后重新签名。
