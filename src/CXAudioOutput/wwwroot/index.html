@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#08090b">
+  <meta name="description" content="CX Audio Output — 把这台设备变成 Windows 的无线扬声器。">
+  <title>CX Audio Output · 聆听</title>
+  <link rel="icon" href="/assets/favicon.png" type="image/png">
+  <link rel="stylesheet" href="/assets/fonts.css?v=1.2.0">
+  <link rel="stylesheet" href="/assets/app.css?v=1.2.0">
+</head>
+<body class="receiver-body">
+  <div class="rx-ambient rx-ambient-one" aria-hidden="true"></div>
+  <div class="rx-ambient rx-ambient-two" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="rx-header">
+    <a class="brand rx-brand" href="/" aria-label="CX Audio Output">
+      <span class="brand-mark" aria-hidden="true"><span>CX</span><i></i></span>
+      <span class="brand-name">
+        <b>CX Audio Output</b>
+        <small>WIRELESS SPEAKER</small>
+      </span>
+    </a>
+    <span class="rx-status" id="rx-status" data-state="idle"><i></i><span>准备加入</span></span>
+  </header>
+
+  <main class="rx-main">
+    <section class="join-view" id="join-view">
+      <div class="join-art" aria-hidden="true">
+        <span class="join-ring join-ring-a"></span>
+        <span class="join-ring join-ring-b"></span>
+        <span class="join-ring join-ring-c"></span>
+        <span class="join-core"><span>CX</span><i></i></span>
+        <span class="join-eq">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </span>
+      </div>
+
+      <div class="join-copy">
+        <p class="eyebrow">把这台设备变成扬声器</p>
+        <h1>准备好，<br><span>接收声音。</span></h1>
+        <p class="join-sub">来自 <strong id="join-host-name">你的电脑</strong> 的系统音频，会通过本地网络实时传到这台设备。</p>
+      </div>
+
+      <form class="join-card" id="join-form" autocomplete="off">
+        <label class="field">
+          <span>设备名称</span>
+          <input id="device-name" name="name" type="text" maxlength="32" placeholder="例如：客厅手机" autocomplete="nickname">
+        </label>
+
+        <label class="field" id="code-field">
+          <span>访问码</span>
+          <input id="access-code" name="code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="输入电脑上的 6 位访问码" autocomplete="one-time-code">
+        </label>
+
+        <div class="linked-note" id="linked-note" hidden>
+          <span><i></i>已通过链接配对</span>
+          <button type="button" id="change-code">更改访问码</button>
+        </div>
+
+        <button class="start-button" id="start-button" type="submit">
+          <span id="start-label">开始聆听</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+        </button>
+        <p class="form-note" id="form-note">点击后请允许浏览器播放声音。</p>
+      </form>
+
+      <div class="join-footer">
+        <button class="text-button" id="test-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
+          测试扬声器
+        </button>
+        <span class="dot-sep" aria-hidden="true"></span>
+        <span>本地串流 · 不上传云端</span>
+      </div>
+    </section>
+
+    <section class="player-view" id="player-view" hidden>
+      <div class="player-topline">
+        <span class="live-pill"><i></i>LIVE</span>
+        <span class="player-network" id="player-network">已连接</span>
+      </div>
+
+      <div class="orb-wrap">
+        <div class="orb-halo" aria-hidden="true"></div>
+        <canvas id="orb-canvas" width="720" height="720" aria-hidden="true"></canvas>
+        <div class="orb-center">
+          <span class="orb-logo">CX</span>
+          <span class="orb-state" id="orb-state">正在同步</span>
+        </div>
+      </div>
+
+      <div class="now-playing">
+        <p class="eyebrow">正在接收系统音频</p>
+        <h1 id="receiver-host-name">你的电脑</h1>
+        <p id="receiver-source">来自本地网络</p>
+      </div>
+
+      <div class="volume-deck">
+        <button class="round-button" id="local-mute" type="button" aria-label="静音" aria-pressed="false">
+          <svg class="icon-volume-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+          <svg class="icon-volume-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4H4Z"/><path d="m16 10 5 5m0-5-5 5"/></svg>
+        </button>
+        <input class="range rx-range" id="local-volume" type="range" min="0" max="100" step="1" value="100" aria-label="音量">
+        <span class="rx-volume-value" id="local-volume-value">100</span>
+        <button class="round-button" id="fullscreen-button" type="button" aria-label="全屏" title="全屏">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M8 21H3v-5m13 5h5v-5"/></svg>
+        </button>
+      </div>
+
+      <div class="signal-row">
+        <span class="signal-chip"><i class="chip-dot"></i><span id="rx-buffer">缓冲 --</span></span>
+        <span class="signal-chip"><i class="chip-dot"></i><span id="rx-rtt">网络 --</span></span>
+        <span class="signal-chip" id="engine-chip" hidden><i class="chip-dot"></i><span>兼容模式</span></span>
+        <button class="text-button details-link" id="details-button" type="button">连接详情</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="rx-footer" id="rx-footer">
+    <span>CX AUDIO OUTPUT</span>
+    <span>保持此页面开启以继续播放</span>
+  </footer>
+
+  <div class="rx-overlay" id="rx-overlay" hidden>
+    <div class="overlay-card">
+      <span class="overlay-icon" id="overlay-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6v12M15 6v12"/></svg>
+      </span>
+      <p class="eyebrow" id="overlay-eyebrow">串流已暂停</p>
+      <h2 id="overlay-title">电脑端已暂停</h2>
+      <p id="overlay-copy">在电脑上的 CX Audio Output 控制台点击“继续串流”即可恢复播放。</p>
+      <div class="overlay-actions">
+        <button class="button button-primary" id="overlay-action" type="button">知道了</button>
+        <button class="text-button" id="overlay-details" type="button">连接详情</button>
+      </div>
+    </div>
+  </div>
+
+  <dialog class="modal rx-modal" id="details-dialog">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">连接详情</p>
+        <h2>信号状态</h2>
+      </div>
+      <button class="icon-button" id="close-details" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <dl class="details-list">
+      <div><dt>主机</dt><dd id="detail-host">—</dd></div>
+      <div><dt>采样率</dt><dd id="detail-rate">—</dd></div>
+      <div><dt>延迟配置</dt><dd id="detail-profile">—</dd></div>
+      <div><dt>当前缓冲</dt><dd id="detail-buffer">—</dd></div>
+      <div><dt>网络往返</dt><dd id="detail-rtt">—</dd></div>
+      <div><dt>传输格式</dt><dd id="detail-format">PCM 16-bit · 立体声</dd></div>
+      <div><dt>音频引擎</dt><dd id="detail-engine">—</dd></div>
+      <div><dt>欠载次数</dt><dd id="detail-underruns">0</dd></div>
+    </dl>
+    <div class="modal-foot rx-modal-foot">
+      <button class="button button-danger-ghost" id="disconnect-button" type="button">断开连接</button>
+      <button class="button button-primary" id="reconnect-button" type="button">重新连接</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="rx-toast" role="status" aria-live="polite"></div>
+
+  <script src="/assets/receiver.js?v=1.2.0"></script>
+</body>
+</html>

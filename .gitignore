@@ -1,0 +1,32 @@
+# build output
+bin/
+obj/
+dist/
+
+# local toolchain and package caches
+.tools/
+.nuget/
+.dotnet-home/
+.appdata/
+.localappdata/
+.tmp/
+
+# signing material and generated packages must never be committed
+packaging/msix/staging/
+packaging/msix/signing/
+*.pfx
+*.cer
+*.msix
+*.msixbundle
+
+# screenshots and temporary test artifacts
+.tools/shots/
+*.user
+*.suo
+*.log
+
+# IDE / OS noise
+.vs/
+.idea/
+Thumbs.db
+Desktop.ini
