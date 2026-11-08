@@ -108,7 +108,9 @@ public static class Endpoints
 
         app.MapGet("/", (HttpContext context) =>
         {
-            if (NetTools.IsLocal(context))
+            if (NetTools.IsLocal(context)
+                && !string.Equals(context.Request.Query["wired"].ToString(), "1",
+                    StringComparison.Ordinal))
             {
                 return Results.Redirect("/studio");
             }
@@ -312,10 +314,11 @@ public static class Endpoints
 
         var name = NetTools.SanitizeName(context.Request.Query["name"].ToString(), "未命名设备");
         var platform = NetTools.SanitizeName(context.Request.Query["platform"].ToString(), "浏览器", 24);
+        var wired = string.Equals(context.Request.Query["wired"].ToString(), "1", StringComparison.Ordinal);
         var address = ip;
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
-        var session = hub.AddReceiver(socket, name, platform, address, logger);
+        var session = hub.AddReceiver(socket, name, platform, address, logger, wired);
         var buffer = new byte[16 * 1024];
 
         try

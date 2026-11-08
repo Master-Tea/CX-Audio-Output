@@ -579,7 +579,8 @@
     if (avatar) avatar.textContent = firstGlyph(receiver.name);
 
     const meta = $('.speaker-meta', card);
-    if (meta) meta.textContent = (receiver.platform || '浏览器') + ' · ' + (receiver.address || '局域网');
+    if (meta) meta.textContent = (receiver.wired ? 'USB 有线 · ' : '') +
+      (receiver.platform || '浏览器') + ' · ' + (receiver.address || '局域网');
 
     setField(card, 'rtt', receiver.rttMs > 0 ? receiver.rttMs + ' ms' : '-- ms');
     setField(card, 'buffer', receiver.bufferMs > 0 ? receiver.bufferMs + ' ms' : '-- ms');

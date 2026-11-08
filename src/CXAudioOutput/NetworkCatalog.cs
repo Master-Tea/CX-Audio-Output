@@ -21,7 +21,8 @@ public sealed record NetworkAdapterSnapshot(
     IReadOnlyList<IPAddress> Ipv4Addresses,
     IReadOnlyList<IPAddress> Ipv6Addresses,
     bool IsVirtual,
-    DateTimeOffset UpdatedAt)
+    DateTimeOffset UpdatedAt,
+    bool IsUsbTether = false)
 {
     public bool HasUsableIpv4 => IsUp && Ipv4Addresses.Count > 0;
 
@@ -104,6 +105,7 @@ public static class NetworkCatalog
                     var name = string.IsNullOrWhiteSpace(nic.Name) ? "网络适配器" : nic.Name;
                     var description = string.IsNullOrWhiteSpace(nic.Description) ? name : nic.Description;
                     var hint = (name + " " + description).ToLowerInvariant();
+                    var isUsbTether = IsUsbTetherInterface(hint);
                     var isVirtual = IsVirtualInterface(hint)
                                     || nic.NetworkInterfaceType is NetworkInterfaceType.Tunnel or NetworkInterfaceType.Ppp;
 
@@ -111,7 +113,7 @@ public static class NetworkCatalog
                         nic.Id,
                         name,
                         description,
-                        TypeLabel(nic.NetworkInterfaceType),
+                        isUsbTether ? "USB 网络共享" : TypeLabel(nic.NetworkInterfaceType),
                         isUp,
                         StatusLabel(nic.OperationalStatus),
                         speed,
@@ -119,7 +121,8 @@ public static class NetworkCatalog
                         ipv4.Distinct().ToList(),
                         ipv6.Distinct().ToList(),
                         isVirtual,
-                        now));
+                        now,
+                        isUsbTether));
                 }
                 catch
                 {
@@ -155,6 +158,31 @@ public static class NetworkCatalog
                || hint.Contains("meta")
                || hint.Contains("tap-")
                || hint.Contains("tun");
+    }
+
+    /// <summary>
+    /// Android USB tethering exposes an RNDIS adapter. Names differ between
+    /// Windows builds and OEM drivers, so match the common descriptions.
+    /// </summary>
+    public static bool IsUsbTetherInterface(string hint)
+    {
+        if (string.IsNullOrWhiteSpace(hint)) return false;
+
+        return hint.Contains("rndis")
+               || hint.Contains("remote ndis")
+               || hint.Contains("基于远程 ndis")
+               || hint.Contains("internet 共享设备")
+               || hint.Contains("internet sharing device")
+               || hint.Contains("usb ethernet")
+               || hint.Contains("usb 以太网")
+               || hint.Contains("usb以太网")
+               || hint.Contains("usb tether")
+               || hint.Contains("usb 网络共享")
+               || hint.Contains("usb网络共享")
+               || hint.Contains("android usb")
+               || (hint.Contains("android") && hint.Contains("usb"))
+               || (hint.Contains("samsung") && hint.Contains("usb"))
+               || (hint.Contains("pixel") && hint.Contains("usb"));
     }
 
     private static string TypeLabel(NetworkInterfaceType type) => type switch

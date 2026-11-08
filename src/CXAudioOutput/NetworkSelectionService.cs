@@ -293,18 +293,24 @@ public sealed class NetworkSelectionService
 
     private void Save()
     {
-        AppSettings settings;
+        List<string> selectedIds;
+        bool multiSelect;
+        bool hasNetworkSetup;
         lock (_sync)
         {
-            settings = new AppSettings
-            {
-                SelectedAdapterIds = _selectedIds.ToList(),
-                MultiSelect = _multiSelect,
-                HasNetworkSetup = _hasNetworkSetup
-            };
+            selectedIds = _selectedIds.ToList();
+            multiSelect = _multiSelect;
+            hasNetworkSetup = _hasNetworkSetup;
         }
 
-        if (!_settingsStore.TrySave(settings))
+        var saved = _settingsStore.Update(settings =>
+        {
+            settings.SelectedAdapterIds = selectedIds;
+            settings.MultiSelect = multiSelect;
+            settings.HasNetworkSetup = hasNetworkSetup;
+        });
+
+        if (!saved)
         {
             _logger.LogWarning("Could not save network selection to {Path}", _settingsStore.FilePath);
         }
@@ -322,6 +328,7 @@ public sealed class NetworkSelectionService
                 adapter.Description,
                 adapter.TypeLabel,
                 adapter.IsVirtual,
+                adapter.IsUsbTether,
                 string.Join(",", adapter.Ipv4Addresses.Select(address => address.ToString())),
                 string.Join(",", adapter.Ipv6Addresses.Select(address => address.ToString())))));
     }

@@ -35,6 +35,7 @@ public sealed class AppServer : IAsyncDisposable
         builder.Services.AddSingleton<AppSettingsStore>();
         builder.Services.AddSingleton<AppState>();
         builder.Services.AddSingleton<NetworkSelectionService>();
+        builder.Services.AddSingleton<AndroidWiredService>();
         builder.Services.AddSingleton<AudioHub>();
         builder.Services.AddSingleton<AccessGuard>();
         builder.Services.AddSingleton<AudioCaptureService>();
@@ -58,7 +59,8 @@ public sealed class AppServer : IAsyncDisposable
             context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
             context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
             context.Response.Headers["Content-Security-Policy"] =
-                "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+                "default-src 'self'; img-src 'self' data:; media-src 'self'; " +
+                "style-src 'self' 'unsafe-inline'; " +
                 "script-src 'self'; connect-src 'self' ws: wss:; font-src 'self'; " +
                 "base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
             await next(context);
@@ -115,6 +117,7 @@ public sealed class AppServer : IAsyncDisposable
         State = _app.Services.GetRequiredService<AppState>();
         Hub = _app.Services.GetRequiredService<AudioHub>();
         Network = _app.Services.GetRequiredService<NetworkSelectionService>();
+        Android = _app.Services.GetRequiredService<AndroidWiredService>();
         Capture = _app.Services.GetRequiredService<AudioCaptureService>();
         Settings = _app.Services.GetRequiredService<AppSettingsStore>();
     }
@@ -123,6 +126,7 @@ public sealed class AppServer : IAsyncDisposable
     public AppState State { get; }
     public AudioHub Hub { get; }
     public NetworkSelectionService Network { get; }
+    public AndroidWiredService Android { get; }
     public AudioCaptureService Capture { get; }
     public AppSettingsStore Settings { get; }
     public string LocalStudioUrl => $"http://127.0.0.1:{Options.Port}/studio";

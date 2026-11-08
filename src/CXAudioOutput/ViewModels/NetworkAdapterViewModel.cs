@@ -25,6 +25,7 @@ public sealed class NetworkAdapterViewModel : INotifyPropertyChanged
     private bool _isUp;
     private bool _isSelected;
     private bool _isVirtual;
+    private bool _isUsbTether;
     private Brush _statusBrush;
     private Brush _statusPillBrush;
 
@@ -45,9 +46,11 @@ public sealed class NetworkAdapterViewModel : INotifyPropertyChanged
     public bool IsUp { get => _isUp; private set => Set(ref _isUp, value); }
     public bool IsSelected { get => _isSelected; private set => Set(ref _isSelected, value); }
     public bool IsVirtual { get => _isVirtual; private set => Set(ref _isVirtual, value); }
+    public bool IsUsbTether { get => _isUsbTether; private set => Set(ref _isUsbTether, value); }
     public Brush StatusBrush { get => _statusBrush; private set => Set(ref _statusBrush, value); }
     public Brush StatusPillBrush { get => _statusPillBrush; private set => Set(ref _statusPillBrush, value); }
     public Visibility VirtualVisibility => IsVirtual ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility UsbTetherVisibility => IsUsbTether ? Visibility.Visible : Visibility.Collapsed;
     public string DescriptionLine => string.IsNullOrWhiteSpace(Description) ? Name : Description;
 
     public void Update(NetworkAdapterSnapshot snapshot, bool selected)
@@ -62,6 +65,7 @@ public sealed class NetworkAdapterViewModel : INotifyPropertyChanged
         MacText = snapshot.MacAddress;
         IsUp = snapshot.IsUp;
         IsVirtual = snapshot.IsVirtual;
+        IsUsbTether = snapshot.IsUsbTether;
         IsSelected = selected;
 
         if (snapshot.IsUp)
@@ -81,6 +85,7 @@ public sealed class NetworkAdapterViewModel : INotifyPropertyChanged
         }
 
         OnPropertyChanged(nameof(VirtualVisibility));
+        OnPropertyChanged(nameof(UsbTetherVisibility));
         OnPropertyChanged(nameof(DescriptionLine));
     }
 

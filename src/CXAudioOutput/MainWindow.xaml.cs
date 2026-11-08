@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
+using Windows.Storage.Pickers;
 using Windows.UI;
 using Path = System.IO.Path;
 
@@ -50,6 +51,16 @@ public sealed partial class MainWindow : Window
     private List<ShareLink> _shareLinks = new();
     private double[]? _lastLevels;
 
+    private bool _androidBusy;
+    private bool _androidActionBusy;
+    private bool _updatingAndroid;
+    private DateTimeOffset _lastAndroidRefresh = DateTimeOffset.MinValue;
+    private string _androidSelectedSerial = string.Empty;
+    private string _androidReverseSerial = string.Empty;
+    private string _androidActiveUrl = string.Empty;
+    private string _androidQrUrl = string.Empty;
+    private int _androidQrGeneration;
+
     public MainWindow(LaunchOptions options)
     {
         _options = options;
@@ -68,6 +79,7 @@ public sealed partial class MainWindow : Window
         {
             _server = new AppServer(options);
             _server.Network.Changed += Network_Changed;
+            _server.Android.Changed += Android_Changed;
         }
         catch (Exception ex)
         {
@@ -94,6 +106,7 @@ public sealed partial class MainWindow : Window
         _updating = false;
         UpdateNetwork(force: true);
         UpdateShare(force: true);
+        UpdateAndroidUi();
     }
 
     private void ConfigureWindow()
@@ -178,6 +191,12 @@ public sealed partial class MainWindow : Window
         UpdateNetwork();
         UpdateReceivers();
         UpdateShare();
+
+        if (DateTimeOffset.UtcNow - _lastAndroidRefresh >= TimeSpan.FromSeconds(4))
+        {
+            _lastAndroidRefresh = DateTimeOffset.UtcNow;
+            _ = RefreshAndroidAsync();
+        }
     }
 
     private void UpdateAudioStatus()
@@ -450,6 +469,7 @@ public sealed partial class MainWindow : Window
             ShareUrlText.Text = "没有可用网卡地址";
             QrPlaceholder.Visibility = Visibility.Visible;
             QrImage.Source = null;
+            _qrGeneration += 1;
             _qrUrl = string.Empty;
             return;
         }
@@ -482,6 +502,418 @@ public sealed partial class MainWindow : Window
             if (generation != _qrGeneration) return;
             QrPlaceholder.Visibility = Visibility.Visible;
         }
+    }
+
+    private void Android_Changed(object? sender, EventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_closed) UpdateAndroidUi();
+        });
+    }
+
+    private async Task RefreshAndroidAsync()
+    {
+        if (_server is null || _closed || _androidBusy) return;
+        _androidBusy = true;
+        try
+        {
+            await _server.Android.RefreshAsync();
+        }
+        catch
+        {
+            // The service records its own error state.
+        }
+        finally
+        {
+            _androidBusy = false;
+        }
+
+        if (!_closed) UpdateAndroidUi();
+    }
+
+    private void UpdateAndroidUi()
+    {
+        if (_closed) return;
+        var server = _server;
+        if (server is null)
+        {
+            AndroidWiredPillText.Text = "服务未启动";
+            return;
+        }
+
+        var snapshot = server.Android.GetSnapshot();
+        var code = server.State.AccessCode;
+        var tether = snapshot.UsbTetherAdapter;
+        var reverse = snapshot.ReverseActive;
+        _androidReverseSerial = reverse ? snapshot.ReverseSerial ?? string.Empty : string.Empty;
+        var tetherSelected = tether is not null && server.Network.IsSelected(tether.Id);
+        var tetherReady = tether is { IsUp: true } && tether.Ipv4Addresses.Count > 0;
+
+        if (reverse)
+        {
+            AndroidWiredDot.Fill = _acidBrush;
+            AndroidWiredPillText.Text = "USB 有线 · 已连接";
+        }
+        else if (tetherReady)
+        {
+            AndroidWiredDot.Fill = tetherSelected ? _acidBrush : _warningBrush;
+            AndroidWiredPillText.Text = tetherSelected ? "USB 网络共享 · 已启用" : "USB 网络共享 · 待启用";
+        }
+        else if (snapshot.AdbAvailable)
+        {
+            AndroidWiredDot.Fill = snapshot.ReadyDevice is null ? _warningBrush : _acidBrush;
+            AndroidWiredPillText.Text = snapshot.ReadyDevice is null ? "等待设备授权" : "已发现 Android 设备";
+        }
+        else
+        {
+            AndroidWiredDot.Fill = _mutedBrush;
+            AndroidWiredPillText.Text = "未检测到设备";
+        }
+
+        if (tether is null)
+        {
+            AndroidTetherStatusText.Text = "未检测到 USB 网络共享网卡。在手机上开启“USB 网络共享”后会出现。";
+            UseTetherButton.IsEnabled = false;
+            UseTetherButtonText.Text = "使用 USB 网卡";
+        }
+        else
+        {
+            var ipText = tether.Ipv4Addresses.Count > 0
+                ? string.Join(" · ", tether.Ipv4Addresses.Select(address => address.ToString()))
+                : "等待 IPv4";
+            AndroidTetherStatusText.Text = $"{tether.Name} · {ipText}" +
+                                           (tetherSelected ? " · 已选中" : string.Empty);
+            UseTetherButton.IsEnabled = tetherReady && !tetherSelected;
+            UseTetherButtonText.Text = tetherSelected
+                ? (tetherReady ? "已在广播" : "已选中，等待地址")
+                : "使用 USB 网卡";
+        }
+
+        _updatingAndroid = true;
+        try
+        {
+            var adbPath = snapshot.AdbPath;
+            if (!snapshot.AdbAvailable)
+            {
+                AndroidAdbStatusText.Text = "未检测到 adb。可点“选择 adb”，或使用左侧 USB 网络共享。";
+                SetAndroidDevices(Array.Empty<AndroidDeviceItem>(), null);
+                AndroidDeviceComboBox.IsEnabled = false;
+                AndroidReverseButton.IsEnabled = false;
+                AndroidStopReverseButton.IsEnabled = false;
+                AndroidOpenPhoneButton.IsEnabled = false;
+            }
+            else
+            {
+                var errorSuffix = string.IsNullOrWhiteSpace(snapshot.Error)
+                    ? string.Empty
+                    : " · " + snapshot.Error;
+                AndroidAdbStatusText.Text = "adb：" + ShortenPath(adbPath) + errorSuffix;
+
+                var items = snapshot.Devices
+                    .Select(device => new AndroidDeviceItem(device.Serial, device.Display, device.IsReady))
+                    .ToList();
+                var wanted = items.Any(item => item.Serial == _androidSelectedSerial)
+                    ? _androidSelectedSerial
+                    : items.FirstOrDefault(item => item.Ready)?.Serial
+                      ?? items.FirstOrDefault()?.Serial
+                      ?? string.Empty;
+                SetAndroidDevices(items, wanted);
+                AndroidDeviceComboBox.IsEnabled = !reverse;
+
+                AndroidReverseButton.IsEnabled = !reverse && snapshot.ReadyDevice is not null;
+                AndroidStopReverseButton.IsEnabled = reverse;
+                AndroidOpenPhoneButton.IsEnabled = reverse;
+            }
+        }
+        finally
+        {
+            _updatingAndroid = false;
+        }
+
+        AndroidReverseButtonText.Text = reverse ? "通道已建立" : "建立有线通道";
+        if (reverse)
+        {
+            AndroidAdbStatusText.Text = "USB 有线通道已建立" +
+                                        (string.IsNullOrWhiteSpace(snapshot.ReverseSerial)
+                                            ? string.Empty
+                                            : " · " + snapshot.ReverseSerial) +
+                                        (string.IsNullOrWhiteSpace(snapshot.Error)
+                                            ? string.Empty
+                                            : " · " + snapshot.Error);
+        }
+
+        string? url = null;
+        var hint = string.Empty;
+        if (reverse)
+        {
+            url = server.Android.BuildPhoneUrl(code);
+            hint = "已建立 ADB 通道；在手机浏览器打开此地址（localhost 为安全上下文）。";
+        }
+        else if (tetherReady && tetherSelected)
+        {
+            url = server.Android.BuildTetherUrl(code);
+            hint = "手机与电脑位于 USB 网段，打开此地址即可。";
+        }
+        else if (tetherReady)
+        {
+            hint = "先点“使用 USB 网卡”，再复制或扫描地址。";
+        }
+        else
+        {
+            hint = "建立任一有线通道后显示收听地址。";
+        }
+
+        _androidActiveUrl = url ?? string.Empty;
+        AndroidWiredUrlText.Text = string.IsNullOrWhiteSpace(url) ? "建立通道后显示" : url;
+        AndroidWiredHintText.Text = hint;
+        CopyAndroidUrlButton.IsEnabled = !string.IsNullOrWhiteSpace(url);
+        AndroidQrPlaceholder.Visibility = string.IsNullOrWhiteSpace(url)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        _ = UpdateAndroidQrAsync(_androidActiveUrl);
+    }
+
+    private void SetAndroidDevices(IReadOnlyList<AndroidDeviceItem> items, string? wantedSerial)
+    {
+        var current = AndroidDeviceComboBox.ItemsSource as IReadOnlyList<AndroidDeviceItem>;
+        var same = current is not null
+                   && current.Count == items.Count
+                   && current.Zip(items, (left, right) =>
+                       string.Equals(left.Serial, right.Serial, StringComparison.Ordinal)
+                       && string.Equals(left.Display, right.Display, StringComparison.Ordinal)).All(equal => equal);
+
+        if (!same)
+        {
+            AndroidDeviceComboBox.ItemsSource = items;
+        }
+
+        if (items.Count == 0)
+        {
+            AndroidDeviceComboBox.SelectedIndex = -1;
+            _androidSelectedSerial = string.Empty;
+            return;
+        }
+
+        var index = 0;
+        for (var i = 0; i < items.Count; i += 1)
+        {
+            if (!string.Equals(items[i].Serial, wantedSerial, StringComparison.Ordinal)) continue;
+            index = i;
+            break;
+        }
+
+        if (AndroidDeviceComboBox.SelectedIndex != index)
+        {
+            AndroidDeviceComboBox.SelectedIndex = index;
+        }
+
+        _androidSelectedSerial = items[index].Serial;
+    }
+
+    private async Task UpdateAndroidQrAsync(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            _androidQrGeneration += 1;
+            _androidQrUrl = string.Empty;
+            AndroidQrImage.Source = null;
+            AndroidQrPlaceholder.Visibility = Visibility.Visible;
+            return;
+        }
+
+        if (string.Equals(url, _androidQrUrl, StringComparison.Ordinal)) return;
+
+        var generation = ++_androidQrGeneration;
+        try
+        {
+            var image = await QrCodeService.CreateAsync(url);
+            if (generation != _androidQrGeneration || _closed) return;
+            AndroidQrImage.Source = image;
+            AndroidQrPlaceholder.Visibility = image is null ? Visibility.Visible : Visibility.Collapsed;
+            _androidQrUrl = image is null ? string.Empty : url;
+        }
+        catch
+        {
+            if (generation != _androidQrGeneration) return;
+            AndroidQrPlaceholder.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void UseAndroidTether_Click(object sender, RoutedEventArgs e)
+    {
+        if (_server is null || _androidActionBusy) return;
+        var tether = _server.Android.GetSnapshot().UsbTetherAdapter;
+        if (tether is null)
+        {
+            ShowAndroidInfo(InfoBarSeverity.Warning, "没有检测到 USB 网卡",
+                "请先在手机上开启“USB 网络共享”，等待电脑出现 USB 网卡后再试。");
+            return;
+        }
+
+        if (tether.Ipv4Addresses.Count == 0)
+        {
+            ShowAndroidInfo(InfoBarSeverity.Warning, "USB 网卡还没有地址",
+                "Windows 正在向手机获取 IPv4 地址，请稍等几秒后刷新。");
+            return;
+        }
+
+        _androidActionBusy = true;
+        try
+        {
+            _server.Network.SetSelected(tether.Id, true);
+            UpdateNetwork(force: true);
+            UpdateShare(force: true);
+            UpdateAndroidUi();
+            _lastAndroidRefresh = DateTimeOffset.MinValue;
+            await RefreshAndroidAsync();
+            ShowAndroidInfo(InfoBarSeverity.Success, "USB 网卡已启用",
+                "用手机扫描右侧二维码，或打开下方的有线收听地址。");
+        }
+        finally
+        {
+            _androidActionBusy = false;
+        }
+    }
+
+    private async void RefreshAndroid_Click(object sender, RoutedEventArgs e)
+    {
+        _lastAndroidRefresh = DateTimeOffset.MinValue;
+        await RefreshAndroidAsync();
+    }
+
+    private async void AndroidReverse_Click(object sender, RoutedEventArgs e)
+    {
+        if (_server is null || _androidActionBusy) return;
+        _androidActionBusy = true;
+        AndroidReverseButton.IsEnabled = false;
+        AndroidReverseButtonText.Text = "正在建立…";
+        try
+        {
+            var (ok, message) = await _server.Android.EnableReverseAsync(_androidSelectedSerial);
+            ShowAndroidInfo(ok ? InfoBarSeverity.Success : InfoBarSeverity.Error,
+                ok ? "USB 有线通道已建立" : "无法建立 USB 通道", message);
+            _lastAndroidRefresh = DateTimeOffset.MinValue;
+            await RefreshAndroidAsync();
+        }
+        finally
+        {
+            _androidActionBusy = false;
+            AndroidReverseButtonText.Text = "建立有线通道";
+            UpdateAndroidUi();
+        }
+    }
+
+    private async void AndroidStopReverse_Click(object sender, RoutedEventArgs e)
+    {
+        if (_server is null || _androidActionBusy) return;
+        _androidActionBusy = true;
+        try
+        {
+            var (ok, message) = await _server.Android.DisableReverseAsync();
+            ShowAndroidInfo(ok ? InfoBarSeverity.Informational : InfoBarSeverity.Warning,
+                ok ? "USB 有线通道已关闭" : "关闭通道时出现问题", message);
+            _lastAndroidRefresh = DateTimeOffset.MinValue;
+            await RefreshAndroidAsync();
+        }
+        finally
+        {
+            _androidActionBusy = false;
+            UpdateAndroidUi();
+        }
+    }
+
+    private async void AndroidPickAdb_Click(object sender, RoutedEventArgs e)
+    {
+        if (_server is null) return;
+        try
+        {
+            var picker = new FileOpenPicker
+            {
+                SuggestedStartLocation = PickerLocationId.ComputerFolder
+            };
+            picker.FileTypeFilter.Add(".exe");
+            var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, handle);
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+
+            if (!_server.Android.SetAdbPath(file.Path))
+            {
+                ShowAndroidInfo(InfoBarSeverity.Error, "无法使用这个 adb",
+                    "请选择 Android platform-tools 目录中的 adb.exe。");
+                return;
+            }
+
+            ShowAndroidInfo(InfoBarSeverity.Success, "已选择 adb", file.Path);
+            _lastAndroidRefresh = DateTimeOffset.MinValue;
+            await RefreshAndroidAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowAndroidInfo(InfoBarSeverity.Error, "无法打开文件选择器", ex.Message);
+        }
+    }
+
+    private async void AndroidOpenPhone_Click(object sender, RoutedEventArgs e)
+    {
+        if (_server is null || _androidActionBusy || string.IsNullOrWhiteSpace(_androidActiveUrl)) return;
+        _androidActionBusy = true;
+        try
+        {
+            var serial = string.IsNullOrWhiteSpace(_androidReverseSerial)
+                ? _androidSelectedSerial
+                : _androidReverseSerial;
+            var (ok, message) = await _server.Android.OpenOnPhoneAsync(_androidActiveUrl, serial);
+            ShowAndroidInfo(ok ? InfoBarSeverity.Success : InfoBarSeverity.Error,
+                ok ? "已发送到手机" : "无法打开手机浏览器", message);
+        }
+        finally
+        {
+            _androidActionBusy = false;
+        }
+    }
+
+    private void CopyAndroidUrl_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_androidActiveUrl))
+        {
+            ShowAndroidInfo(InfoBarSeverity.Warning, "还没有有线地址",
+                "请先建立 ADB 通道，或启用 USB 网络共享网卡。");
+            return;
+        }
+
+        CopyText(_androidActiveUrl, "有线收听链接已复制");
+    }
+
+    private void AndroidDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingAndroid) return;
+        if (AndroidDeviceComboBox.SelectedItem is AndroidDeviceItem item)
+        {
+            _androidSelectedSerial = item.Serial;
+        }
+    }
+
+    private void ShowAndroidInfo(InfoBarSeverity severity, string title, string message)
+    {
+        AndroidWiredInfoBar.Severity = severity;
+        AndroidWiredInfoBar.Title = title;
+        AndroidWiredInfoBar.Message = message;
+        AndroidWiredInfoBar.IsOpen = true;
+    }
+
+    private static string ShortenPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "—";
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrEmpty(local)
+            && path.StartsWith(local, StringComparison.OrdinalIgnoreCase))
+        {
+            return "%LOCALAPPDATA%" + path[local.Length..];
+        }
+
+        return path;
     }
 
     private void Network_Changed(object? sender, EventArgs e)
@@ -627,6 +1059,7 @@ public sealed partial class MainWindow : Window
         if (_server is null) return;
         _server.Hub.RotateCode();
         UpdateShare(force: true);
+        UpdateAndroidUi();
         ShowNotice(InfoBarSeverity.Success, "访问码已更换", "已经连接的设备不会断开，新设备需要使用新访问码。");
     }
 
@@ -729,9 +1162,13 @@ public sealed partial class MainWindow : Window
         _noticeTimer?.Stop();
         if (_server is not null)
         {
+            _server.Network.Changed -= Network_Changed;
+            _server.Android.Changed -= Android_Changed;
             await _server.DisposeAsync();
         }
     }
 
     private sealed record ShareLink(string Display, string Url, string Ip);
+
+    private sealed record AndroidDeviceItem(string Serial, string Display, bool Ready);
 }

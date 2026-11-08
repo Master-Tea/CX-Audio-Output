@@ -74,7 +74,7 @@ public sealed class AppState
         get { lock (_sync) return _peak; }
     }
 
-    public string VersionString => "1.2.0";
+    public string VersionString => "1.3.0";
 
     public static int TargetMilliseconds(string profile) => profile switch
     {

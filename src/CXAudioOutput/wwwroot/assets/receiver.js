@@ -31,6 +31,7 @@
     buffer: $('#rx-buffer'),
     rtt: $('#rx-rtt'),
     engineChip: $('#engine-chip'),
+    backgroundChip: $('#background-chip'),
     detailsButton: $('#details-button'),
     footer: $('#rx-footer'),
     overlay: $('#rx-overlay'),
@@ -49,6 +50,11 @@
     detailRtt: $('#detail-rtt'),
     detailEngine: $('#detail-engine'),
     detailUnderruns: $('#detail-underruns'),
+    detailWired: $('#detail-wired'),
+    detailBackground: $('#detail-background'),
+    detailKeepAwake: $('#detail-keep-awake'),
+    backgroundToggle: $('#background-toggle'),
+    keepAwakeToggle: $('#keep-awake-toggle'),
     disconnect: $('#disconnect-button'),
     reconnect: $('#reconnect-button'),
     toast: $('#rx-toast'),
@@ -92,6 +98,15 @@
     toastTimer: 0,
     identifyUntil: 0,
     wakeLock: null,
+    wired: false,
+    backgroundEnabled: true,
+    keepAwake: false,
+    mediaPaused: false,
+    silentAudio: null,
+    silentOscillator: null,
+    silentDestination: null,
+    mediaSessionReady: false,
+    lastBackgroundNotice: 0,
     volumeSendTimer: 0,
     lastStatsSent: 0,
     canvasReady: false,
@@ -110,12 +125,16 @@
     R.localVolume = clampNumber(localStorage.getItem('cx.volume'), 100, 0, 100);
     R.localMuted = localStorage.getItem('cx.muted') === '1';
     R.reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    R.wired = params.get('wired') === '1' || params.get('usb') === '1';
+    R.backgroundEnabled = readBoolPref('cx.background', true);
+    R.keepAwake = readBoolPref('cx.keepawake', false);
 
     els.deviceName.value = R.name;
     els.accessCode.value = R.code;
     updateVolumeUi();
     applyCodeUi();
     bindEvents();
+    updateBackgroundUi();
     initCanvas();
     requestAnimationFrame(drawOrb);
 
@@ -190,13 +209,30 @@
       sendJson({ type: 'volume', value: R.localVolume });
     });
 
-    els.playerView.addEventListener('click', () => {
+    els.playerView.addEventListener('click', (event) => {
+      if (event.target.closest('button, input, select, textarea, dialog, a')) return;
+      if (R.mediaPaused) {
+        setMediaPaused(false);
+        return;
+      }
       if (R.ctx && R.ctx.state === 'suspended') {
         R.ctx.resume().catch(() => {});
       }
     });
 
     els.fullscreen.addEventListener('click', toggleFullscreen);
+    if (els.backgroundToggle) {
+      els.backgroundToggle.checked = R.backgroundEnabled;
+      els.backgroundToggle.addEventListener('change', () => {
+        setBackgroundEnabled(els.backgroundToggle.checked);
+      });
+    }
+    if (els.keepAwakeToggle) {
+      els.keepAwakeToggle.checked = R.keepAwake;
+      els.keepAwakeToggle.addEventListener('change', () => {
+        setKeepAwake(els.keepAwakeToggle.checked);
+      });
+    }
     els.detailsButton.addEventListener('click', openDetails);
     els.overlayDetails.addEventListener('click', openDetails);
     els.closeDetails.addEventListener('click', closeDetails);
@@ -231,11 +267,15 @@
     });
 
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && R.started) {
+      if (!R.started) return;
+      if (R.backgroundEnabled) {
+        ensureBackgroundPlayback();
+      }
+      if (document.visibilityState === 'visible') {
         if (R.ctx && R.ctx.state === 'suspended') {
           R.ctx.resume().catch(() => {});
         }
-        requestWakeLock();
+        if (R.keepAwake) requestWakeLock();
         if (!R.connected && !R.intentional) {
           reconnectNow();
         }
@@ -246,7 +286,15 @@
       if (R.started && !R.connected && !R.intentional) reconnectNow();
     });
 
-    window.addEventListener('pagehide', releaseWakeLock);
+    window.addEventListener('pagehide', (event) => {
+      releaseWakeLock();
+      if (!event.persisted) releaseBackgroundPlayback();
+    });
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted && R.started) {
+        ensureBackgroundPlayback();
+      }
+    });
     window.addEventListener('beforeunload', () => {
       if (R.ws) {
         try { R.ws.close(); } catch { /* ignored */ }
@@ -322,6 +370,8 @@
     R.started = true;
     R.gotHello = false;
     R.intentional = false;
+    R.mediaPaused = false;
+    if (R.backgroundEnabled) ensureBackgroundPlayback();
     connectAudio();
   }
 
@@ -334,10 +384,29 @@
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) throw new Error('这个浏览器不支持 Web Audio。');
 
+    if (R.silentAudio) releaseBackgroundPlayback();
+
+    configureAudioSession();
     const context = new AudioContextClass({ latencyHint: 'interactive' });
     // Safari/iOS needs resume() to be called directly inside the user gesture.
     // Keep this early call alive while the player is prepared.
     void context.resume().catch(() => {});
+
+    // Start the silent keep-alive media element while the user gesture is
+    // still active. Doing it after the Worklet/module awaits can lose the
+    // activation and make audio.play() fail on iOS/Android.
+    if (R.backgroundEnabled) {
+      const keepAlive = ensureSilentAudio(context);
+      if (keepAlive) {
+        const promise = keepAlive.play();
+        if (promise && typeof promise.catch === 'function') {
+          promise.catch((error) => {
+            keepAlive.dataset.playError = String(error && error.name || error) + ':' +
+              String(error && error.message || '');
+          });
+        }
+      }
+    }
 
     try {
       const player = await createAudioPlayer(context);
@@ -359,9 +428,11 @@
       R.analyserData = new Uint8Array(analyser.frequencyBinCount);
       R.canvasReady = true;
       updateEngineUi();
+      configureAudioSession();
 
       await resumeContext(context);
     } catch (error) {
+      releaseBackgroundPlayback();
       try { await context.close(); } catch { /* ignored */ }
       throw error;
     }
@@ -376,7 +447,7 @@
   async function createWorkletPlayer(context) {
     if (!context.audioWorklet || typeof window.AudioWorkletNode !== 'function') return null;
     try {
-      await context.audioWorklet.addModule('/assets/audio-worklet.js?v=1.2.0');
+      await context.audioWorklet.addModule('/assets/audio-worklet.js?v=1.3.0');
       const node = new window.AudioWorkletNode(context, 'cx-audio', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
@@ -688,13 +759,211 @@
     ]);
   }
 
+  function configureAudioSession() {
+    try {
+      // Safari 17+: declare this page as media playback so it may keep the
+      // audio session alive when the screen is locked or the app is backgrounded.
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch {
+      // The API is advisory and not available everywhere.
+    }
+  }
+
+  function setBackgroundEnabled(enabled) {
+    R.backgroundEnabled = Boolean(enabled);
+    writeBoolPref('cx.background', R.backgroundEnabled);
+    if (R.backgroundEnabled) {
+      ensureBackgroundPlayback();
+      setupMediaSession();
+      toast('已开启后台 / 熄屏播放');
+    } else {
+      releaseBackgroundPlayback();
+      toast('已关闭后台播放，请保持页面在前台');
+    }
+    updateBackgroundUi();
+  }
+
+  function setKeepAwake(enabled) {
+    R.keepAwake = Boolean(enabled);
+    writeBoolPref('cx.keepawake', R.keepAwake);
+    if (R.keepAwake) {
+      requestWakeLock();
+      toast('已开启屏幕常亮');
+    } else {
+      releaseWakeLock();
+      toast('已关闭屏幕常亮');
+    }
+    updateBackgroundUi();
+  }
+
+  function ensureBackgroundPlayback() {
+    if (!R.backgroundEnabled || !R.started) return;
+    configureAudioSession();
+    const audio = ensureSilentAudio();
+    if (audio && audio.paused) {
+      const promise = audio.play();
+      if (promise && typeof promise.catch === 'function') {
+        promise.catch((error) => {
+          audio.dataset.playError = String(error && error.name || error) + ':' +
+            String(error && error.message || '');
+        });
+      }
+    }
+    setupMediaSession();
+  }
+
+  function ensureSilentAudio(context) {
+    if (R.silentAudio) return R.silentAudio;
+    const ctx = context || R.ctx;
+    if (!ctx || ctx.state === 'closed') return null;
+    try {
+      // A live MediaStream destination is much more reliable than a Blob WAV
+      // for keeping a media element active: no async media load and no extra
+      // network/file request. The oscillator is muted with a zero gain node,
+      // but the audio track still keeps the browser/OS media session alive.
+      const destination = ctx.createMediaStreamDestination();
+      const oscillator = ctx.createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 60;
+      const gain = ctx.createGain();
+      // Not exactly zero: a tiny signal keeps some platforms from treating
+      // the track as "silent/inaudible" while remaining well below hearing.
+      gain.gain.value = 0.0001;
+      oscillator.connect(gain);
+      gain.connect(destination);
+      oscillator.start();
+
+      const audio = new Audio();
+      audio.srcObject = destination.stream;
+      audio.autoplay = true;
+      audio.volume = 1;
+      audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
+      audio.setAttribute('aria-hidden', 'true');
+      audio.style.cssText = 'position:fixed;left:-8px;bottom:-8px;width:2px;height:2px;opacity:0.01;pointer-events:none;';
+      audio.addEventListener('error', () => {
+        audio.dataset.error = audio.error
+          ? audio.error.code + ':' + audio.error.message
+          : 'unknown';
+      });
+      document.body.appendChild(audio);
+
+      R.silentAudio = audio;
+      R.silentOscillator = oscillator;
+      R.silentDestination = destination;
+      return audio;
+    } catch {
+      return null;
+    }
+  }
+
+  function setupMediaSession() {
+    if (!R.backgroundEnabled || !('mediaSession' in navigator)) return;
+    R.mediaSessionReady = true;
+    try {
+      if (typeof window.MediaMetadata === 'function') {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: R.hostName || 'CX Audio Output',
+          artist: R.wired ? 'USB 有线 · 系统音频' : '本地网络 · 系统音频',
+          album: 'CX Audio Output',
+          artwork: [{ src: '/assets/cover.png', sizes: '256x256', type: 'image/png' }]
+        });
+      }
+      navigator.mediaSession.playbackState = (R.streamPlaying && !R.mediaPaused) ? 'playing' : 'paused';
+      navigator.mediaSession.setActionHandler('play', () => setMediaPaused(false));
+      navigator.mediaSession.setActionHandler('pause', () => setMediaPaused(true));
+      navigator.mediaSession.setActionHandler('stop', () => setMediaPaused(true));
+      ['seekbackward', 'seekforward', 'seekto', 'nexttrack', 'previoustrack']
+        .forEach((action) => {
+          try { navigator.mediaSession.setActionHandler(action, null); } catch { /* ignored */ }
+        });
+    } catch {
+      // Metadata and action handlers are best effort on older browsers.
+    }
+    updateBackgroundUi();
+  }
+
+  function updateMediaSessionState() {
+    if (!R.mediaSessionReady || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState =
+        (R.streamPlaying && !R.mediaPaused) ? 'playing' : 'paused';
+    } catch {
+      // ignored
+    }
+  }
+
+  function clearMediaSession() {
+    R.mediaSessionReady = false;
+    if (!('mediaSession' in navigator)) return;
+    try { navigator.mediaSession.playbackState = 'none'; } catch { /* ignored */ }
+    try { navigator.mediaSession.metadata = null; } catch { /* ignored */ }
+    ['play', 'pause', 'stop', 'seekbackward', 'seekforward', 'seekto', 'nexttrack', 'previoustrack']
+      .forEach((action) => {
+        try { navigator.mediaSession.setActionHandler(action, null); } catch { /* ignored */ }
+      });
+  }
+
+  function releaseBackgroundPlayback() {
+    if (R.silentAudio) {
+      try { R.silentAudio.pause(); } catch { /* ignored */ }
+      try { R.silentAudio.srcObject = null; } catch { /* ignored */ }
+      try { R.silentAudio.remove(); } catch { /* ignored */ }
+      R.silentAudio = null;
+    }
+    if (R.silentOscillator) {
+      try { R.silentOscillator.stop(); } catch { /* ignored */ }
+      try { R.silentOscillator.disconnect(); } catch { /* ignored */ }
+      R.silentOscillator = null;
+    }
+    if (R.silentDestination) {
+      try { R.silentDestination.disconnect(); } catch { /* ignored */ }
+      R.silentDestination = null;
+    }
+    clearMediaSession();
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'auto';
+    } catch {
+      // ignored
+    }
+    updateBackgroundUi();
+  }
+
+  function setMediaPaused(paused) {
+    if (!R.started) return;
+    R.mediaPaused = Boolean(paused);
+    if (!R.mediaPaused) {
+      if (R.ctx && R.ctx.state === 'suspended') R.ctx.resume().catch(() => {});
+      ensureBackgroundPlayback();
+    }
+    applyGain();
+    updatePlaybackUi();
+    updateMediaSessionState();
+    updateBackgroundUi();
+  }
+
+  function updateBackgroundUi() {
+    if (els.backgroundChip) {
+      const visible = R.started && R.backgroundEnabled;
+      els.backgroundChip.hidden = !visible;
+      if (visible) {
+        const label = els.backgroundChip.querySelector('span');
+        if (label) label.textContent = R.mediaSessionReady ? '熄屏可播' : '后台保活';
+      }
+    }
+    if (els.backgroundToggle) els.backgroundToggle.checked = R.backgroundEnabled;
+    if (els.keepAwakeToggle) els.keepAwakeToggle.checked = R.keepAwake;
+    updateDetails();
+  }
+
   function connectAudio() {
     disposeSocket();
     const generation = ++R.socketGeneration;
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = protocol + '//' + location.host + '/ws/audio?code=' +
       encodeURIComponent(R.code) + '&name=' + encodeURIComponent(R.name) +
-      '&platform=' + encodeURIComponent(R.platform);
+      '&platform=' + encodeURIComponent(R.platform) +
+      (R.wired ? '&wired=1' : '');
 
     let socket;
     try {
@@ -921,6 +1190,7 @@
     R.profile = message.profile || 'balanced';
     R.targetMs = message.targetMs || 240;
     R.sampleRate = message.sampleRate || 48000;
+    R.wired = Boolean(message.wired) || R.wired;
 
     els.joinHostName.textContent = R.hostName;
     els.hostName.textContent = R.hostName;
@@ -932,7 +1202,11 @@
       R.startTime = Date.now();
       showPlayer();
       removeCodeFromUrl();
-      requestWakeLock();
+      if (R.keepAwake) requestWakeLock();
+      if (R.backgroundEnabled) {
+        ensureBackgroundPlayback();
+        setupMediaSession();
+      }
     }
 
     configurePlayer();
@@ -949,6 +1223,7 @@
     setFormNote('点击后请允许浏览器播放声音。');
     updatePlaybackUi();
     updateConnectionAge();
+    updateMediaSessionState();
     sendJson({ type: 'stats', bufferMs: R.stats.bufferMs, playback: playbackName(), underruns: R.stats.underruns, overruns: R.stats.overruns });
   }
 
@@ -959,6 +1234,7 @@
       R.player?.resume();
       hideOverlay();
       setStatus('live', '正在播放');
+      if (R.backgroundEnabled) ensureBackgroundPlayback();
     } else {
       const reason = message.reason || 'paused';
       R.captureStatus = reason;
@@ -1009,6 +1285,7 @@
 
     applyGain();
     updatePlaybackUi();
+    updateMediaSessionState();
   }
 
   function configurePlayer() {
@@ -1039,7 +1316,9 @@
     if (!R.gain || !R.ctx) return;
     const master = Math.pow(clampNumber(R.masterVolume, 100, 0, 100) / 100, 1.35);
     const local = Math.pow(clampNumber(R.localVolume, 100, 0, 100) / 100, 1.35);
-    const target = R.streamPlaying && !R.masterMuted && !R.localMuted ? master * local : 0;
+    const target = R.streamPlaying && !R.masterMuted && !R.localMuted && !R.mediaPaused
+      ? master * local
+      : 0;
     R.gain.gain.setTargetAtTime(target, R.ctx.currentTime, 0.04);
   }
 
@@ -1049,6 +1328,8 @@
     if (!R.streamPlaying) {
       label = R.captureStatus === 'paused' ? '已暂停'
         : R.captureStatus === 'starting' ? '正在启动' : '等待信号';
+    } else if (R.mediaPaused) {
+      label = '已暂停';
     } else if (R.masterMuted) {
       label = '电脑端已静音';
     } else if (R.localMuted) {
@@ -1058,7 +1339,7 @@
     }
 
     els.orbState.textContent = label;
-    els.orbState.dataset.state = !R.streamPlaying ? 'paused'
+    els.orbState.dataset.state = (!R.streamPlaying || R.mediaPaused) ? 'paused'
       : (R.masterMuted || R.localMuted) ? 'muted'
       : R.stats.playing ? 'playing' : 'buffering';
     updateStatsUi();
@@ -1086,7 +1367,8 @@
 
   function updateSourceText() {
     const rate = Math.round((R.sampleRate || 48000) / 100) / 10;
-    els.source.textContent = '来自 ' + R.hostName + ' · ' + rate + ' kHz · 立体声';
+    els.source.textContent = '来自 ' + R.hostName + (R.wired ? ' · USB 有线' : '') +
+      ' · ' + rate + ' kHz · 立体声';
   }
 
   function updateConnectionAge() {
@@ -1098,7 +1380,8 @@
       ? hours + ' 小时 ' + (minutes % 60) + ' 分钟'
       : minutes > 0 ? minutes + ' 分钟'
       : seconds < 5 ? '刚刚连接' : seconds + ' 秒';
-    els.playerNetwork.textContent = (R.connected ? '已连接 · ' : '重连中 · ') + label;
+    els.playerNetwork.textContent = (R.wired ? 'USB 有线 · ' : '') +
+      (R.connected ? '已连接 · ' : '重连中 · ') + label;
   }
 
   function sendStats() {
@@ -1133,6 +1416,7 @@
     els.body.classList.add('is-playing');
     setStatus(R.streamPlaying ? 'live' : 'paused', R.streamPlaying ? '正在播放' : '等待信号');
     window.scrollTo(0, 0);
+    updateBackgroundUi();
   }
 
   function showJoin() {
@@ -1140,6 +1424,7 @@
     els.joinView.hidden = false;
     els.body.classList.remove('is-playing');
     updateConnectionAge();
+    updateBackgroundUi();
   }
 
   function setStatus(mode, label) {
@@ -1203,10 +1488,22 @@
     els.detailBuffer.textContent = R.stats.bufferMs > 0 ? R.stats.bufferMs + ' ms' : '缓冲中';
     els.detailRtt.textContent = R.rtt > 0 ? R.rtt + ' ms' : '—';
     els.detailUnderruns.textContent = String(R.stats.underruns || 0);
+    if (els.detailWired) {
+      els.detailWired.textContent = R.wired ? 'USB 有线 · 本机通道' : '局域网 Wi-Fi';
+    }
+    if (els.detailBackground) {
+      els.detailBackground.textContent = R.backgroundEnabled
+        ? (R.mediaSessionReady ? '已启用 · 媒体会话' : '已启用 · 保活音频')
+        : '已关闭';
+    }
+    if (els.detailKeepAwake) {
+      els.detailKeepAwake.textContent = R.keepAwake ? '已开启' : '已关闭';
+    }
   }
 
   function disconnectAndReturn() {
     R.intentional = true;
+    R.mediaPaused = false;
     clearTimeout(R.reconnectTimer);
     disposeSocket();
     releaseWakeLock();
@@ -1242,6 +1539,7 @@
       R.ctx = null;
       try { context.close(); } catch { /* ignored */ }
     }
+    releaseBackgroundPlayback();
     R.stats = { bufferMs: 0, underruns: 0, overruns: 0, playing: false, primed: false };
   }
 
@@ -1311,7 +1609,7 @@
   }
 
   async function requestWakeLock() {
-    if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    if (!R.keepAwake || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
     if (R.wakeLock) return;
     try {
       R.wakeLock = await navigator.wakeLock.request('screen');
@@ -1453,6 +1751,23 @@
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
     return Math.max(min, Math.min(max, number));
+  }
+
+  function readBoolPref(key, fallback) {
+    try {
+      const value = localStorage.getItem(key);
+      return value === null ? fallback : value === '1';
+    } catch {
+      return fallback;
+    }
+  }
+
+  function writeBoolPref(key, value) {
+    try {
+      localStorage.setItem(key, value ? '1' : '0');
+    } catch {
+      // Private browsing may block storage; playback still works for this session.
+    }
   }
 
   function audioErrorMessage(error) {

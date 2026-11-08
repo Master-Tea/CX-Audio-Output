@@ -1,11 +1,12 @@
-﻿CX Audio Output 1.2.0
+CX Audio Output 1.3.0
 ====================
 
 发布者：MasterTea
 
-把手机、平板或另一台电脑变成 Windows 的无线扬声器。
+把手机、平板或另一台电脑变成 Windows 的无线或有线扬声器。
 本版本包含 WinUI 3 原生控制台、网卡单选/多选、实时硬件状态、
-全新猫咪/传声筒图标，以及针对偶发杂音和卡顿的稳定性增强。
+Android USB 有线连接（USB 网络共享 / ADB 通道），以及
+接收端后台与熄屏播放。
 
 快速开始
 --------
@@ -14,11 +15,35 @@
 3. 在“网络接口”中勾选要使用的网卡（可单选，也可多选）。
 4. 让接收设备和电脑连接同一个 Wi-Fi / 局域网。
 5. 扫描控制台二维码，在接收设备上打开链接，点“开始聆听”。
+6. 需要锁屏 / 后台播放时，保持页面打开即可；默认已启用。
+
+Android USB 有线连接
+--------------------
+USB 网络共享（推荐，免开发者选项）：
+1. 用支持数据传输的 USB 线连接手机和电脑。
+2. 在手机上打开“USB 网络共享 / USB 共享网络”。
+3. 在控制台“Android 有线连接”中点击“使用 USB 网卡”。
+4. 扫描有线收听二维码，或复制地址到手机浏览器打开。
+
+ADB 有线通道（需要 USB 调试 + adb.exe）：
+1. 在手机开发者选项中开启 USB 调试，并允许这台电脑调试。
+2. 连接数据线，等待控制台显示“已授权”。
+3. 点击“建立有线通道”，再点“在手机上打开”。
+4. 手机访问 127.0.0.1，属于安全上下文，会优先使用 AudioWorklet。
+5. 点击“关闭通道”或退出应用时会自动移除 adb reverse。
+
+后台与熄屏播放
+--------------
+- 接收端默认启用媒体会话 + 静默 MediaStream 保活。
+- 在“连接详情”中可以关闭“后台 / 熄屏继续播放”，或开启“保持屏幕常亮”。
+- Android 厂商省电策略、iOS 系统版本和浏览器策略仍可能影响后台行为；
+  如果锁屏后停止，请重新打开页面并确认开关已启用。
 
 重要说明
 --------
 - 整个文件夹必须一起保留；不要只复制 exe。wwwroot、DLL 和资源目录都是运行所需。
 - 首次运行 Windows 防火墙询问时，请选择“允许访问”，并勾选“专用网络”。
+  USB 网络共享可能被识别为“公用网络”，必要时同时允许“公用网络”。
 - 只有勾选网卡的 IP 会生成链接；访问未选中的网卡会返回 403。
 - 局域网 HTTP 下接收端会自动使用“兼容模式”（ScriptProcessor）。
   AudioWorklet 只在 HTTPS 或 localhost 下启用；兼容模式可正常使用，延迟略高。
@@ -31,7 +56,7 @@
 ------
 如果其他设备打不开链接，请以管理员身份运行：
 
-  New-NetFirewallRule -DisplayName "CX Audio Output" -Direction Inbound -Protocol TCP -LocalPort 5240 -Action Allow -Profile Private
+  New-NetFirewallRule -DisplayName "CX Audio Output" -Direction Inbound -Protocol TCP -LocalPort 5240 -Action Allow -Profile Private,Public
 
 端口被占用时：
   CXAudioOutput.exe --port 8080

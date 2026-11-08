@@ -18,7 +18,8 @@ public sealed record ReceiverSnapshot(
     string Playback,
     long Underruns,
     long Dropped,
-    DateTimeOffset ConnectedAt);
+    DateTimeOffset ConnectedAt,
+    bool Wired);
 
 public sealed class ReceiverSession : IAsyncDisposable
 {
@@ -40,12 +41,13 @@ public sealed class ReceiverSession : IAsyncDisposable
     private long _lastSeenTicks = DateTime.UtcNow.Ticks;
 
     public ReceiverSession(WebSocket socket, string name, string platform, string address,
-        ILogger logger)
+        ILogger logger, bool wired = false)
     {
         Socket = socket;
         _name = name;
         Platform = platform;
         Address = address;
+        Wired = wired;
         _logger = logger;
         Id = Guid.NewGuid().ToString("N")[..10];
         ConnectedAt = DateTimeOffset.UtcNow;
@@ -61,6 +63,7 @@ public sealed class ReceiverSession : IAsyncDisposable
     public WebSocket Socket { get; }
     public string Platform { get; }
     public string Address { get; }
+    public bool Wired { get; }
     public DateTimeOffset ConnectedAt { get; }
 
     public string Name
@@ -156,7 +159,7 @@ public sealed class ReceiverSession : IAsyncDisposable
         lock (_sync)
         {
             return new ReceiverSnapshot(Id, _name, Platform, Address, _volume, _muted, _rttMs,
-                _bufferMs, _playback, _underruns, Interlocked.Read(ref _dropped), ConnectedAt);
+                _bufferMs, _playback, _underruns, Interlocked.Read(ref _dropped), ConnectedAt, Wired);
         }
     }
 
@@ -380,13 +383,14 @@ public sealed class AudioHub
     public ICollection<ReceiverSession> Receivers => _receivers.Values;
 
     public ReceiverSession AddReceiver(WebSocket socket, string name, string platform, string address,
-        ILogger logger)
+        ILogger logger, bool wired = false)
     {
-        var session = new ReceiverSession(socket, name, platform, address, logger);
+        var session = new ReceiverSession(socket, name, platform, address, logger, wired);
         _receivers[session.Id] = session;
         session.Start();
         session.EnqueueJson(BuildHello(session));
-        _logger.LogInformation("Receiver connected: {Name} ({Platform}) from {Address}", name, platform, address);
+        _logger.LogInformation("Receiver connected: {Name} ({Platform}) from {Address}{Wired}",
+            name, platform, address, wired ? " over USB" : string.Empty);
         _ = BroadcastStateAsync();
         return session;
     }
@@ -635,7 +639,8 @@ public sealed class AudioHub
                 playback = r.Playback,
                 underruns = r.Underruns,
                 dropped = r.Dropped,
-                connectedAt = r.ConnectedAt
+                connectedAt = r.ConnectedAt,
+                wired = r.Wired
             })
             .ToArray();
 
@@ -693,7 +698,8 @@ public sealed class AudioHub
             playing,
             paused = capture.Paused,
             captureStatus = capture.Status,
-            demo = _state.Demo
+            demo = _state.Demo,
+            wired = receiver.Wired
         }, JsonOptions);
     }
 

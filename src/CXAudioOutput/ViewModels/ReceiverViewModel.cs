@@ -52,7 +52,8 @@ public sealed class ReceiverViewModel : INotifyPropertyChanged
     {
         Id = snapshot.Id;
         Name = snapshot.Name;
-        Meta = snapshot.Platform + " · " + snapshot.Address;
+        Meta = (snapshot.Wired ? "USB 有线 · " : string.Empty)
+               + snapshot.Platform + " · " + snapshot.Address;
         Playback = snapshot.Playback;
         PlaybackText = snapshot.Playback switch
         {

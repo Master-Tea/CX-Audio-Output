@@ -364,6 +364,12 @@
                                                         <TextBlock Text="虚拟" FontSize="8"
                                                                    Foreground="{StaticResource TextMutedBrush}" />
                                                     </Border>
+                                                    <Border Background="#1AD8FF65" CornerRadius="8" Padding="5,2"
+                                                            Visibility="{x:Bind UsbTetherVisibility, Mode=OneWay}"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="USB" FontSize="8"
+                                                                   Foreground="{StaticResource AcidBrush}" />
+                                                    </Border>
                                                 </StackPanel>
                                                 <TextBlock Text="{x:Bind DescriptionLine, Mode=OneWay}"
                                                            Style="{StaticResource CaptionStyle}" FontSize="10"
@@ -388,6 +394,201 @@
                                 </ListView.ItemTemplate>
                             </ListView>
                         </Grid>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource AppCardStyle}" Padding="24,22,24,20">
+                    <Grid RowSpacing="14">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Android 有线连接" Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock Text="用 USB 数据线把手机变成有线扬声器，不需要 Wi-Fi；延迟更低，也不受路由器影响。"
+                                           Style="{StaticResource CaptionStyle}" />
+                            </StackPanel>
+                            <Border Grid.Column="1" Style="{StaticResource StatusPillStyle}"
+                                    Background="{StaticResource AcidSoftBrush}" VerticalAlignment="Top">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <Ellipse x:Name="AndroidWiredDot" Width="6" Height="6"
+                                             Fill="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="AndroidWiredPillText" Text="未检测到设备"
+                                               FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Grid Grid.Row="1" ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1*" />
+                                <ColumnDefinition Width="1*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Background="#08FFFFFF" BorderBrush="#16F0F5E9"
+                                    BorderThickness="1" CornerRadius="14" Padding="15">
+                                <StackPanel Spacing="9">
+                                    <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <Border Width="26" Height="26" CornerRadius="9"
+                                                Background="{StaticResource AcidSoftBrush}">
+                                            <TextBlock Text="1" FontFamily="{StaticResource DisplayFont}"
+                                                       FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource AcidBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <StackPanel Spacing="1">
+                                            <TextBlock Text="USB 网络共享" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="免开发者选项 · 推荐" Style="{StaticResource CaptionStyle}"
+                                                       FontSize="9" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock Text="在手机上打开“USB 网络共享 / USB 共享网络”，电脑会自动出现一块 USB 网卡。"
+                                               Style="{StaticResource BodyMutedStyle}" FontSize="10" />
+                                    <TextBlock x:Name="AndroidTetherStatusText" Text="正在检测 USB 网卡…"
+                                               Style="{StaticResource CaptionStyle}" FontSize="10"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <Button x:Name="UseTetherButton" Style="{StaticResource LimeButtonStyle}"
+                                                Padding="12,6" MinHeight="32" Click="UseAndroidTether_Click"
+                                                AutomationProperties.Name="使用 USB 网卡">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon Glyph="&#xE703;" FontSize="12" />
+                                                <TextBlock x:Name="UseTetherButtonText" Text="使用 USB 网卡"
+                                                           FontSize="10" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Style="{StaticResource GhostButtonStyle}" Padding="10,6"
+                                                MinHeight="32" Click="RefreshAndroid_Click"
+                                                AutomationProperties.Name="重新检测 Android 设备"
+                                                ToolTipService.ToolTip="重新检测 Android 设备">
+                                            <FontIcon Glyph="&#xE72C;" FontSize="12" />
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="1" Background="#08FFFFFF" BorderBrush="#16F0F5E9"
+                                    BorderThickness="1" CornerRadius="14" Padding="15">
+                                <StackPanel Spacing="9">
+                                    <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <Border Width="26" Height="26" CornerRadius="9"
+                                                Background="{StaticResource AcidSoftBrush}">
+                                            <TextBlock Text="2" FontFamily="{StaticResource DisplayFont}"
+                                                       FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource AcidBrush}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <StackPanel Spacing="1">
+                                            <TextBlock Text="ADB 有线通道" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="需要 USB 调试 · 手机走 localhost" Style="{StaticResource CaptionStyle}"
+                                                       FontSize="9" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock Text="开启开发者选项和 USB 调试，授权电脑后用 adb reverse 建立通道；手机访问 127.0.0.1，属于安全上下文。"
+                                               Style="{StaticResource BodyMutedStyle}" FontSize="10" />
+                                    <ComboBox x:Name="AndroidDeviceComboBox" HorizontalAlignment="Stretch"
+                                              PlaceholderText="选择 Android 设备" DisplayMemberPath="Display"
+                                              AutomationProperties.Name="选择 Android 设备"
+                                              SelectionChanged="AndroidDevice_SelectionChanged" />
+                                    <TextBlock x:Name="AndroidAdbStatusText" Text="正在检测 adb…"
+                                               Style="{StaticResource CaptionStyle}" FontSize="10"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <Button x:Name="AndroidReverseButton" Style="{StaticResource LimeButtonStyle}"
+                                                Padding="12,6" MinHeight="32" Click="AndroidReverse_Click"
+                                                AutomationProperties.Name="建立有线通道">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon Glyph="&#xE703;" FontSize="12" />
+                                                <TextBlock x:Name="AndroidReverseButtonText" Text="建立有线通道"
+                                                           FontSize="10" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="AndroidStopReverseButton" Style="{StaticResource GhostButtonStyle}"
+                                                Padding="10,6" MinHeight="32" Click="AndroidStopReverse_Click"
+                                                AutomationProperties.Name="关闭有线通道">
+                                            <TextBlock Text="关闭通道" FontSize="10" />
+                                        </Button>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <Button x:Name="AndroidPickAdbButton" Style="{StaticResource GhostButtonStyle}"
+                                                Padding="10,6" MinHeight="30" Click="AndroidPickAdb_Click"
+                                                AutomationProperties.Name="选择 adb.exe">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon Glyph="&#xE8B7;" FontSize="11" />
+                                                <TextBlock Text="选择 adb" FontSize="10" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="AndroidOpenPhoneButton" Style="{StaticResource GhostButtonStyle}"
+                                                Padding="10,6" MinHeight="30" Click="AndroidOpenPhone_Click"
+                                                AutomationProperties.Name="在手机上打开有线收听页面">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon Glyph="&#xE8A7;" FontSize="11" />
+                                                <TextBlock Text="在手机上打开" FontSize="10" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Grid.Row="2" Background="#06FFFFFF" BorderBrush="#12F0F5E9"
+                                BorderThickness="1" CornerRadius="14" Padding="14,12">
+                            <Grid ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="5" VerticalAlignment="Center">
+                                    <TextBlock Text="有线收听地址" FontSize="11" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="AndroidWiredUrlText" Text="建立通道后显示"
+                                               Style="{StaticResource CaptionStyle}" FontSize="10"
+                                               IsTextSelectionEnabled="True"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <Button x:Name="CopyAndroidUrlButton" Style="{StaticResource GhostButtonStyle}"
+                                                Padding="10,5" MinHeight="30" Click="CopyAndroidUrl_Click"
+                                                AutomationProperties.Name="复制有线收听链接">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon Glyph="&#xE8C8;" FontSize="11" />
+                                                <TextBlock Text="复制链接" FontSize="10" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBlock x:Name="AndroidWiredHintText"
+                                                   Text="建立任一有线通道后显示收听地址。"
+                                                   Style="{StaticResource CaptionStyle}" FontSize="9"
+                                                   VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <Border Grid.Column="1" Width="98" Height="98" Background="White"
+                                        CornerRadius="13" Padding="6">
+                                    <Grid>
+                                        <Image x:Name="AndroidQrImage" Stretch="Uniform" />
+                                        <TextBlock x:Name="AndroidQrPlaceholder" Text="USB"
+                                                   FontFamily="{StaticResource DisplayFont}" FontSize="13"
+                                                   FontWeight="SemiBold" Foreground="#5D665A"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <InfoBar x:Name="AndroidWiredInfoBar" Grid.Row="3" Severity="Informational"
+                                 IsOpen="False" IsClosable="True" />
+                        <TextBlock Grid.Row="4"
+                                   Text="有线音频只在本机与数据线之间传输。使用 ADB 通道时手机会访问 localhost，接收端会优先启用 AudioWorklet；USB 网络共享则使用兼容模式。"
+                                   Style="{StaticResource CaptionStyle}" FontSize="9"
+                                   Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" />
                     </Grid>
                 </Border>
 
@@ -562,7 +763,7 @@
                     </Border>
                 </Grid>
 
-                <TextBlock Text="CX AUDIO OUTPUT  ·  LOCAL NETWORK ONLY  ·  v1.2.0"
+                <TextBlock Text="CX AUDIO OUTPUT  ·  LOCAL NETWORK ONLY  ·  v1.3.0"
                            Style="{StaticResource EyebrowStyle}" FontSize="8"
                            HorizontalAlignment="Center" Margin="0,4,0,0" />
             </StackPanel>
